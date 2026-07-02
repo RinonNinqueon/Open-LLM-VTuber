@@ -250,16 +250,33 @@ class BasicMemoryAgent(AgentInterface):
         if input_data.images:
             image_added = False
             for img_data in input_data.images:
-                if isinstance(img_data.data, str) and img_data.data.startswith(
-                    "data:image"
-                ):
-                    user_content.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": img_data.data, "detail": "auto"},
-                        }
-                    )
-                    image_added = True
+                if isinstance(img_data.data, str):
+                    clean_base64 = "".join(img_data.data.split())
+                    if clean_base64.startswith("data:image"):
+#                        if clean_base64.startswith("data:image/jpg;base64,"):
+#                            clean_base64 = clean_base64.replace("data:image/jpg;base64,", "data:image/jpeg;base64,", 1)
+
+                        header, base64_str = clean_base64.split(",", 1)
+                        image_bytes = base64.b64decode(base64_str)
+                        image = Image.open(io.BytesIO(image_bytes))
+                        max_resolution = (768, 768)
+                        image.thumbnail(max_resolution, Image.Resampling.LANCZOS)
+                        buffered = io.BytesIO()
+                        image.save(buffered, format="JPEG", quality=85)
+                        compressed_base64_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                        final_image_url = (f"data:image/jpeg;base64,{compressed_base64_str}")
+
+                        user_content.append(
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": final_image_url, "detail": "auto"},
+                            }
+                        )
+                        image_added = True
+                    else:
+                        logger.error(
+                            f"Image missing 'data:image' prefix after clean. Skipping."
+                        )
                 else:
                     logger.error(
                         f"Invalid image data format: {type(img_data.data)}. Skipping image."
