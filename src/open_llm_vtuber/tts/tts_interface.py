@@ -1,6 +1,7 @@
 import abc
 import os
 import asyncio
+import requests
 
 from loguru import logger
 
@@ -23,9 +24,42 @@ class TTSInterface(metaclass=abc.ABCMeta):
 
         """
         return await asyncio.to_thread(self.generate_audio, text, file_name_no_ext)
+        
+    async def async_generate_audio_post(self, text: str, file_name_no_ext=None) -> bytes:
+        """
+        Asynchronously generate speech audio file using TTS.
+
+        By default, this runs the synchronous generate_audio in a coroutine.
+        Subclasses can override this method to provide true async implementation.
+
+        text: str
+            the text to speak
+        file_name_no_ext (optional and deprecated): str
+            name of the file without file extension
+
+        Returns:
+        str: the path to the generated audio file
+
+        """
+        return await asyncio.to_thread(self.generate_audio_post, text, file_name_no_ext)
 
     @abc.abstractmethod
     def generate_audio(self, text: str, file_name_no_ext=None) -> str:
+        """
+        Generate speech audio file using TTS.
+        text: str
+            the text to speak
+        file_name_no_ext (optional and deprecated): str
+            name of the file without file extension
+
+        Returns:
+        str: the path to the generated audio file
+
+        """
+        raise NotImplementedError
+    
+    @abc.abstractmethod
+    def generate_audio_post(self, text: str, file_name_no_ext=None) -> requests.Response:
         """
         Generate speech audio file using TTS.
         text: str

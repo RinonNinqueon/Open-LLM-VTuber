@@ -3,6 +3,8 @@ from pydub import AudioSegment
 from pydub.utils import make_chunks
 from ..agent.output_types import Actions
 from ..agent.output_types import DisplayText
+import requests
+import io
 
 
 def _get_volume_by_chunks(audio: AudioSegment, chunk_length_ms: int) -> list:
@@ -81,6 +83,57 @@ def prepare_audio_payload(
 
     return payload
 
+def prepare_audio_payload_post(
+    responce: bytes | None,
+    chunk_length_ms: int = 20,
+    display_text: DisplayText = None,
+    actions: Actions = None,
+    forwarded: bool = False,
+) -> dict[str, any]:
+    if isinstance(display_text, DisplayText):
+        display_text = display_text.to_dict()
+
+    if not responce:
+        # Return payload for silent display
+        return {
+            "type": "audio",
+            "audio": None,
+            "volumes": [],
+            "slice_length": chunk_length_ms,
+            "display_text": display_text,
+            "actions": actions.to_dict() if actions else None,
+            "forwarded": forwarded,
+        }
+    
+    try:
+#        audio_chunk = AudioSegment.from_file(io.BytesIO(responce), format="wav")
+        audio_chunk = AudioSegment.from_raw(
+            io.BytesIO(responce), 
+            sample_width=2,
+            frame_rate=24000,
+            channels=1
+        )
+        wav_buffer = io.BytesIO()
+        audio_chunk.export(wav_buffer, format="wav")
+        audio_bytes = wav_buffer.getvalue()
+    except Exception as e:
+        raise ValueError(
+            f"Error loading or converting generated audio: {e}"
+        )
+    audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+    volumes = _get_volume_by_chunks(audio_chunk, chunk_length_ms)
+
+    payload = {
+        "type": "audio",
+        "audio": audio_base64,
+        "volumes": volumes,
+        "slice_length": chunk_length_ms,
+        "display_text": display_text,
+        "actions": actions.to_dict() if actions else None,
+        "forwarded": forwarded,
+    }
+
+    return payload
 
 # Example usage:
 # payload, duration = prepare_audio_payload("path/to/audio.mp3", display_text="Hello", expression_list=[0,1,2])

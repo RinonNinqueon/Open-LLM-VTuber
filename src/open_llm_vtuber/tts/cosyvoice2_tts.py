@@ -1,7 +1,8 @@
 from gradio_client import Client, handle_file
 from loguru import logger
 from .tts_interface import TTSInterface
-
+import requests
+import httpx
 
 class TTSEngine(TTSInterface):
     def __init__(
@@ -18,13 +19,13 @@ class TTSEngine(TTSInterface):
         speed=1.0,
         api_name="/generate_audio",
     ):
-        self.client = Client(client_url)
-
+#        self.client = Client(client_url)
+        self.client_url = "{}inference_zero_shot".format(client_url)
         self.mode_checkbox_group = mode_checkbox_group
         self.sft_dropdown = sft_dropdown
         self.prompt_text = prompt_text
-        self.prompt_wav_upload = handle_file(prompt_wav_upload_url)
-        self.prompt_wav_record = handle_file(prompt_wav_record_url)
+        self.prompt_wav_upload = prompt_wav_upload_url#handle_file(prompt_wav_upload_url)
+        self.prompt_wav_record = prompt_wav_upload_url#handle_file(prompt_wav_record_url)
         self.instruct_text = instruct_text
         self.stream = stream
         self.seed = seed
@@ -36,7 +37,6 @@ class TTSEngine(TTSInterface):
             logger.warning(
                 "Warning: customizing the temp file name with file_name_no_ext is not supported by cosyvoice2TTS and will be ignored."
             )
-
         result_wav_path = self.client.predict(
             tts_text=text,
             mode_checkbox_group=self.mode_checkbox_group,
@@ -52,3 +52,45 @@ class TTSEngine(TTSInterface):
         )
 
         return result_wav_path
+
+    def generate_audio_post(self, text, file_name_no_ext=None) -> requests.Response:
+        if file_name_no_ext is not None:
+            logger.warning(
+                "Warning: customizing the temp file name with file_name_no_ext is not supported by cosyvoice2TTS and will be ignored."
+            )
+        logger.info(
+                "TTS> " + text
+            )
+        
+        payload = {
+            'tts_text': text,
+            'instruct_text': self.instruct_text,
+            'prompt_text': self.prompt_text,
+            'prompt_wav': self.prompt_wav_upload,
+            'seed': self.seed
+        }
+        response = requests.post(self.client_url, data=payload, stream=True)
+        
+        return response
+    
+    async def async_generate_audio_post(self, text: str, file_name_no_ext=None) -> bytes:
+        if file_name_no_ext is not None:
+            logger.warning(
+                "Warning: customizing the temp file name with file_name_no_ext is not supported by cosyvoice2TTS and will be ignored."
+            )
+        logger.info(
+                "TTS> " + text
+            )
+        
+        payload = {
+            'tts_text': text,
+            'instruct_text': '',#self.instruct_text,
+            'prompt_text': self.prompt_text,
+            'prompt_wav': self.prompt_wav_upload,
+            'seed': self.seed
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.client_url, data=payload, timeout=None)
+            response.raise_for_status()
+        
+        return response.content

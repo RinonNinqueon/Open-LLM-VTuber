@@ -9,9 +9,10 @@ from loguru import logger
 from ..agent.output_types import DisplayText, Actions
 from ..live2d_model import Live2dModel
 from ..tts.tts_interface import TTSInterface
-from ..utils.stream_audio import prepare_audio_payload
+from ..utils.stream_audio import prepare_audio_payload, prepare_audio_payload_post
 from .types import WebSocketSend
-
+import requests
+import httpx
 
 class TTSTaskManager:
     """Manages TTS tasks and ensures ordered delivery to frontend while allowing parallel TTS generation"""
@@ -78,7 +79,7 @@ class TTSTaskManager:
 
         # Create and queue the TTS task
         task = asyncio.create_task(
-            self._process_tts(
+            self._process_tts_post(
                 tts_text=tts_text,
                 display_text=display_text,
                 actions=actions,
@@ -163,10 +164,55 @@ class TTSTaskManager:
                 tts_engine.remove_file(audio_file_path)
                 logger.debug("Audio cache file cleaned.")
 
+    async def _process_tts_post(
+        self,
+        tts_text: str,
+        display_text: DisplayText,
+        actions: Optional[Actions],
+        live2d_model: Live2dModel,
+        tts_engine: TTSInterface,
+        sequence_number: int,
+    ) -> None:
+        """Process TTS generation and queue the result for ordered delivery"""
+        responce = None
+        try:
+            async with self._lock:
+                responce = await self._generate_audio_post(tts_engine, tts_text)
+            payload = prepare_audio_payload_post(
+                responce=responce,
+                display_text=display_text,
+                actions=actions,
+            )
+            # Queue the payload with its sequence number
+            await self._payload_queue.put((payload, sequence_number))
+
+        except Exception as e:
+            logger.error(f"Error preparing audio payload: {e}")
+            # Queue silent payload for error case
+            payload = prepare_audio_payload_post(
+                audio_path=None,
+                display_text=display_text,
+                actions=actions,
+            )
+            await self._payload_queue.put((payload, sequence_number))
+
+        finally:
+            #if audio_file_path:
+            #    tts_engine.remove_file(audio_file_path)
+                logger.debug("Audio cache file cleaned.")
+
     async def _generate_audio(self, tts_engine: TTSInterface, text: str) -> str:
         """Generate audio file from text"""
         logger.debug(f"🏃Generating audio for '''{text}'''...")
         return await tts_engine.async_generate_audio(
+            text=text,
+            file_name_no_ext=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}",
+        )
+
+    async def _generate_audio_post(self, tts_engine: TTSInterface, text: str) -> bytes:
+        """Generate audio file from text"""
+        logger.debug(f"🏃Generating POST audio for '''{text}'''...")
+        return await tts_engine.async_generate_audio_post(
             text=text,
             file_name_no_ext=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}",
         )
